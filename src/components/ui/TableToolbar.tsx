@@ -377,7 +377,7 @@ const TableToolbarInternal = ({
 
   return (
     // Size container so controls collapse in narrow split panes. The explicit
-    // z-index keeps the autocomplete/filter overlays above the grid below (a
+    // z-index keeps the autocomplete dropdowns above the grid below (a
     // container creates a stacking context that would otherwise paint under
     // later siblings).
     <div className="@container relative z-30">
