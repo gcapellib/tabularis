@@ -17,7 +17,7 @@ import {
   buildSingleFilterClause,
   createEmptyFilter,
 } from "../../utils/filterBar";
-import type { StructuredFilter } from "../../utils/filterBar";
+import type { StructuredFilter, FilterCombinator } from "../../utils/filterBar";
 import { formatSqlIdentifier } from "../../utils/identifiers";
 import { formatSortClause } from "../../utils/tableToolbar";
 import { FilterRow } from "./FilterRow";
@@ -40,6 +40,8 @@ interface TableToolbarInternalProps extends TableToolbarProps {
   onPanelOpenChange: (open: boolean) => void;
   structuredFilters: StructuredFilter[];
   onStructuredFiltersChange: (filters: StructuredFilter[]) => void;
+  combinator: FilterCombinator;
+  onCombinatorChange: (combinator: FilterCombinator) => void;
   appliedFilters: Record<string, boolean>;
   onTriggerApplied: (filterId: string) => void;
   onResetApplied: (filterId: string) => void;
@@ -60,6 +62,8 @@ const TableToolbarInternal = ({
   onPanelOpenChange,
   structuredFilters,
   onStructuredFiltersChange,
+  combinator,
+  onCombinatorChange,
   appliedFilters,
   onTriggerApplied,
   onResetApplied,
@@ -148,11 +152,17 @@ const TableToolbarInternal = ({
   };
 
   const closePanel = useCallback(() => {
-    const clause = buildStructuredFilterClause(structuredFilters, activeDriver);
+    const clause = buildStructuredFilterClause(structuredFilters, activeDriver, combinator);
     setFilterInput(clause);
     onPanelOpenChange(false);
     onUpdate(clause, formatSortClause(sortInput, activeDriver), getLimitVal(limitInput));
-  }, [structuredFilters, sortInput, limitInput, getLimitVal, onUpdate, onPanelOpenChange, activeDriver]);
+  }, [structuredFilters, combinator, sortInput, limitInput, getLimitVal, onUpdate, onPanelOpenChange, activeDriver]);
+
+  const handleCombinatorChange = (next: FilterCombinator) => {
+    if (next === combinator) return;
+    onCombinatorChange(next);
+    onResetAllApplied();
+  };
 
   const togglePanel = () => {
     if (panelOpen) {
@@ -166,7 +176,7 @@ const TableToolbarInternal = ({
 
   // Applies all enabled filters — does NOT close panel
   const handleApplyAll = useCallback(() => {
-    const clause = buildStructuredFilterClause(structuredFilters, activeDriver);
+    const clause = buildStructuredFilterClause(structuredFilters, activeDriver, combinator);
     onUpdate(clause, formatSortClause(sortInput, activeDriver), getLimitVal(limitInput));
     structuredFilters.forEach((f) => {
       if (f.enabled !== false) {
@@ -175,7 +185,7 @@ const TableToolbarInternal = ({
         onResetApplied(f.id);
       }
     });
-  }, [structuredFilters, sortInput, limitInput, getLimitVal, onUpdate, onTriggerApplied, onResetApplied, activeDriver]);
+  }, [structuredFilters, combinator, sortInput, limitInput, getLimitVal, onUpdate, onTriggerApplied, onResetApplied, activeDriver]);
 
   // Applies only that single row's filter — resets Applied on all others
   const handleApplySingle = useCallback(
@@ -370,7 +380,7 @@ const TableToolbarInternal = ({
       commitSql(filterInput, sortInput, limitInput);
     } else {
       onUpdate(
-        buildStructuredFilterClause(structuredFilters, activeDriver),
+        buildStructuredFilterClause(structuredFilters, activeDriver, combinator),
         formatSortClause(sortInput, activeDriver),
         getLimitVal(limitInput),
       );
@@ -382,7 +392,7 @@ const TableToolbarInternal = ({
       commitSql(filterInput, sortInput, limitInput);
     } else {
       onUpdate(
-        buildStructuredFilterClause(structuredFilters, activeDriver),
+        buildStructuredFilterClause(structuredFilters, activeDriver, combinator),
         formatSortClause(sortInput, activeDriver),
         getLimitVal(limitInput),
       );
@@ -480,7 +490,7 @@ const TableToolbarInternal = ({
           <div className="flex items-center gap-1.5 flex-1 px-2 py-1 min-w-0">
             <Filter size={12} className="text-muted shrink-0" />
             <span className="text-xs text-muted font-mono truncate">
-              {buildStructuredFilterClause(structuredFilters, activeDriver) || (
+              {buildStructuredFilterClause(structuredFilters, activeDriver, combinator) || (
                 <em className="not-italic opacity-50">{t("toolbar.noActiveFilters")}</em>
               )}
             </span>
@@ -571,13 +581,36 @@ const TableToolbarInternal = ({
                 </span>
               )}
             </div>
-            <button
-              onClick={closePanel}
-              title={t("toolbar.closePanelEsc")}
-              className="w-5 h-5 flex items-center justify-center rounded text-muted hover:text-secondary hover:bg-surface-secondary transition-colors"
-            >
-              <X size={12} />
-            </button>
+            <div className="flex items-center gap-2">
+              <div
+                role="radiogroup"
+                aria-label={t("toolbar.matchMode")}
+                className="flex items-center rounded border border-default/60 overflow-hidden"
+              >
+                {(["AND", "OR"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    role="radio"
+                    aria-checked={combinator === mode}
+                    onClick={() => handleCombinatorChange(mode)}
+                    className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                      combinator === mode
+                        ? "bg-blue-600/20 text-blue-300"
+                        : "text-muted hover:text-secondary hover:bg-surface-secondary"
+                    }`}
+                  >
+                    {mode === "AND" ? t("toolbar.matchAll") : t("toolbar.matchAny")}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={closePanel}
+                title={t("toolbar.closePanelEsc")}
+                className="w-5 h-5 flex items-center justify-center rounded text-muted hover:text-secondary hover:bg-surface-secondary transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </div>
           </div>
 
           {/* Filter rows — scroll horizontally when the pane is narrower than a row */}
@@ -656,6 +689,7 @@ const TableToolbarInternal = ({
 export const TableToolbar = (props: TableToolbarProps) => {
   const [panelOpen, setPanelOpen] = useState(false);
   const [structuredFilters, setStructuredFilters] = useState<StructuredFilter[]>([]);
+  const [combinator, setCombinator] = useState<FilterCombinator>("AND");
   const [appliedFilters, setAppliedFilters] = useState<Record<string, boolean>>({});
 
   const handleTriggerApplied = useCallback((filterId: string) => {
@@ -679,6 +713,8 @@ export const TableToolbar = (props: TableToolbarProps) => {
       onPanelOpenChange={setPanelOpen}
       structuredFilters={structuredFilters}
       onStructuredFiltersChange={setStructuredFilters}
+      combinator={combinator}
+      onCombinatorChange={setCombinator}
       appliedFilters={appliedFilters}
       onTriggerApplied={handleTriggerApplied}
       onResetApplied={handleResetApplied}
